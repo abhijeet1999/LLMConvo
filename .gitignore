@@ -1,0 +1,69 @@
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+vendor/
+.DS_Store
+
+# Build artifacts
+bin/
+
+# Logs
+logs/
+*.log
+
+# Model weights and Ollama data (NEVER commit these - they're huge!)
+*.gguf
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.pb
+*.onnx
+*.tflite
+*.pkl
+*.pickle
+
+# Ollama model storage
+.ollama/
+ollama-models/
+~/.ollama/
+**/ollama-models/
+**/.ollama/
+
+# Docker volumes with models
+docker-volumes/
+volumes/
+*.volume/
+
+# Model directories
+models/
+weights/
+checkpoints/
+*.model/
+
+# Large data files (archives)
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Temporary model files
+*.tmp
+*.temp
+model-*.tmp
+weights-*.tmp
+
+# Saved conversation files
+topic-*.txt
+conversations/
+debates/
+

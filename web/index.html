@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Debate Arena</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .topic-section {
+            padding: 20px 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .topic-section h2 {
+            color: #495057;
+            margin-bottom: 10px;
+        }
+
+        .topic-text {
+            font-size: 1.2em;
+            color: #212529;
+            font-weight: 500;
+        }
+
+        .debate-area {
+            padding: 30px;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            padding: 15px 20px;
+            border-radius: 10px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.persona1 {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+        }
+
+        .message.persona2 {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+
+        .message.judge {
+            background: #f3e5f5;
+            border-left: 4px solid #9c27b0;
+        }
+
+        .message.thinking {
+            background: #f5f5f5;
+            border-left: 4px solid #9e9e9e;
+            opacity: 0.8;
+            font-style: italic;
+        }
+
+        .thinking-indicator {
+            display: inline-block;
+            margin-left: 10px;
+        }
+
+        .thinking-dots {
+            display: inline-block;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 1; }
+        }
+
+        .thinking-timer {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-left: 10px;
+        }
+
+        .message.topic {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+            text-align: center;
+            font-weight: bold;
+        }
+
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .persona-name {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+
+        .persona1 .persona-name {
+            color: #1976d2;
+        }
+
+        .persona2 .persona-name {
+            color: #f57c00;
+        }
+
+        .judge .persona-name {
+            color: #7b1fa2;
+        }
+
+        .round-badge {
+            background: #6c757d;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.85em;
+        }
+
+        .message-content {
+            color: #212529;
+            line-height: 1.6;
+        }
+
+        .judge-decision {
+            margin-top: 30px;
+            padding: 25px;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .judge-decision h3 {
+            font-size: 1.8em;
+            margin-bottom: 15px;
+        }
+
+        .winner {
+            font-size: 1.5em;
+            font-weight: bold;
+            margin: 15px 0;
+        }
+
+        .judge-reason {
+            font-size: 1.1em;
+            line-height: 1.8;
+            margin-top: 15px;
+        }
+
+        .status {
+            padding: 15px 30px;
+            background: #f8f9fa;
+            text-align: center;
+            color: #6c757d;
+            border-top: 2px solid #e9ecef;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .starter-info {
+            margin-top: 10px;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .topic-input-section {
+            padding: 25px 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .topic-input-section h2 {
+            color: #495057;
+            margin-bottom: 10px;
+        }
+
+        #startDebateBtn:hover {
+            transform: scale(1.05);
+        }
+
+        #startDebateBtn:active {
+            transform: scale(0.98);
+        }
+
+        #startDebateBtn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+            <div class="header">
+                <h1>🤖 LLM Debate Arena</h1>
+                <p>Watch AI personas debate on important topics</p>
+                <div style="margin-top: 15px; font-size: 0.9em; opacity: 0.9;">
+                    <strong>Models:</strong> 
+                    <span style="margin: 0 10px;">Persona 1: <span id="modelPersona1">Loading...</span></span>
+                    <span style="margin: 0 10px;">Persona 2: <span id="modelPersona2">Loading...</span></span>
+                    <span style="margin: 0 10px;">Judge: <span id="modelJudge">Loading...</span></span>
+                </div>
+            </div>
+
+        <div class="topic-input-section" id="topicInputSection">
+            <h2>Start a New Debate</h2>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <input type="text" id="topicInput" placeholder="Enter debate topic (e.g., Should AI be regulated?)" 
+                       style="flex: 1; padding: 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 1em;"
+                       autocomplete="off" autofocus>
+                <button id="startDebateBtn" onclick="startDebate()" 
+                        style="padding: 12px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                               color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; 
+                               cursor: pointer; transition: transform 0.2s;">
+                    Start Debate
+                </button>
+                <button id="restartBtn" onclick="restartDebate()" 
+                        style="padding: 12px 20px; background: #dc3545; 
+                               color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; 
+                               cursor: pointer; transition: transform 0.2s; margin-left: 10px;">
+                    🔄 Restart
+                </button>
+            </div>
+            <div id="debateStatus" style="margin-top: 10px; color: #6c757d; font-size: 0.9em;"></div>
+        </div>
+
+        <div class="topic-section" id="topicSection" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <h2 style="margin: 0;">Debate Topic</h2>
+                <button id="restartBtnDuringDebate" onclick="restartDebate()" 
+                        style="padding: 10px 20px; background: #dc3545; 
+                               color: white; border: none; border-radius: 8px; font-size: 0.9em; font-weight: bold; 
+                               cursor: pointer; transition: transform 0.2s;">
+                    🔄 Restart Debate
+                </button>
+            </div>
+            <div class="topic-text" id="topicText"></div>
+            <div class="starter-info" id="starterInfo"></div>
+        </div>
+
+        <div class="debate-area" id="debateArea">
+            <div style="text-align: center; color: #6c757d; padding: 40px;">
+                <p>Waiting for debate to start...</p>
+            </div>
+        </div>
+
+            <div class="status disconnected" id="status">
+                Disconnected
+            </div>
+
+            <div id="modelStatus" style="display: none; padding: 15px 30px; background: #fff3cd; border-top: 2px solid #ffc107; color: #856404;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 1.2em;">⏳</span>
+                    <div style="flex: 1;">
+                        <strong>Model Download Status</strong>
+                        <div id="modelStatusText" style="font-size: 0.9em; margin-top: 5px;">Checking model availability...</div>
+                        <div style="margin-top: 10px;">
+                            <div style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden; position: relative;">
+                                <div id="progressBar" style="background: linear-gradient(90deg, #4caf50, #8bc34a); height: 100%; width: 0%; transition: width 0.3s ease; border-radius: 10px;"></div>
+                                <div id="progressText" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 0.75em; font-weight: bold; color: #333; text-shadow: 0 0 2px white;">0%</div>
+                            </div>
+                        </div>
+                        <div id="modelDetails" style="font-size: 0.85em; margin-top: 12px; color: #666;">
+                            <div id="modelDetailsGrid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-top: 8px;">
+                                <!-- Individual model statuses will be inserted here -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <script>
+        const ws = new WebSocket('ws://localhost:8080/ws');
+        const debateArea = document.getElementById('debateArea');
+        const topicSection = document.getElementById('topicSection');
+        const topicInputSection = document.getElementById('topicInputSection');
+        const topicText = document.getElementById('topicText');
+        const starterInfo = document.getElementById('starterInfo');
+        const topicInput = document.getElementById('topicInput');
+        const startDebateBtn = document.getElementById('startDebateBtn');
+        const debateStatus = document.getElementById('debateStatus');
+        const status = document.getElementById('status');
+        const modelStatus = document.getElementById('modelStatus');
+        const modelStatusText = document.getElementById('modelStatusText');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        const modelDetails = document.getElementById('modelDetails');
+        const modelDetailsGrid = document.getElementById('modelDetailsGrid');
+        const modelPersona1 = document.getElementById('modelPersona1');
+        const modelPersona2 = document.getElementById('modelPersona2');
+        const modelJudge = document.getElementById('modelJudge');
+        let debateState = null;
+        let thinkingTimers = {}; // Track thinking timers by persona+round
+
+        // Function to update model display in header
+        function updateModelDisplay() {
+            fetch('/api/models')
+                .then(response => response.json())
+                .then(data => {
+                    modelPersona1.textContent = data.persona1 || 'Unknown';
+                    modelPersona2.textContent = data.persona2 || 'Unknown';
+                    modelJudge.textContent = data.judge || 'Unknown';
+                })
+                .catch(error => {
+                    console.error('Error fetching models:', error);
+                    modelPersona1.textContent = 'Unknown';
+                    modelPersona2.textContent = 'Unknown';
+                    modelJudge.textContent = 'Unknown';
+                });
+        }
+
+        // Update models on page load and periodically
+        updateModelDisplay();
+        setInterval(updateModelDisplay, 5000); // Update every 5 seconds
+
+        function startDebate() {
+            const topic = topicInput.value.trim();
+            if (!topic) {
+                debateStatus.textContent = 'Please enter a topic';
+                debateStatus.style.color = '#dc3545';
+                topicInput.focus(); // Focus back on input
+                return;
+            }
+
+            startDebateBtn.disabled = true;
+            topicInput.disabled = true; // Disable input while starting
+            debateStatus.textContent = 'Starting debate...';
+            debateStatus.style.color = '#6c757d';
+
+            fetch('/api/start-debate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ topic: topic })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'debate_started') {
+                    debateStatus.textContent = 'Debate started! Waiting for first response...';
+                    debateStatus.style.color = '#28a745';
+                    topicInput.value = ''; // Clear input
+                    topicInput.disabled = false; // Re-enable for next time
+                    topicInputSection.style.display = 'none';
+                    debateArea.innerHTML = '';
+                } else {
+                    throw new Error('Failed to start debate');
+                }
+            })
+            .catch(error => {
+                debateStatus.textContent = 'Error: ' + error.message;
+                debateStatus.style.color = '#dc3545';
+                startDebateBtn.disabled = false;
+                topicInput.disabled = false; // Re-enable on error
+                topicInput.focus(); // Focus back on input
+            });
+        }
+
+        // Allow Enter key to start debate
+        topicInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                startDebate();
+            }
+        });
+
+        async function restartDebate() {
+            if (!confirm('Are you sure you want to restart? This will stop the current debate and clear all history.')) {
+                return;
+            }
+
+            const restartBtn = document.getElementById('restartBtn');
+            const restartBtnDuring = document.getElementById('restartBtnDuringDebate');
+            const btn = restartBtn || restartBtnDuring;
+            
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Restarting...';
+            }
+
+            try {
+                const response = await fetch('http://localhost:8080/api/restart', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                if (response.ok) {
+                    debateState = { messages: [], topic: '', starter: '' };
+                    debateArea.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 40px;"><p>Waiting for debate to start...</p></div>';
+                    topicSection.style.display = 'none';
+                    topicInputSection.style.display = 'block';
+                    topicInput.value = '';
+                    topicInput.disabled = false; // Ensure input is enabled
+                    topicInput.focus(); // Focus on input after restart
+                    thinkingTimers = {}; // Reset timers
+                    debateStatus.textContent = 'System restarted. Ready for new debate.';
+                    debateStatus.style.color = '#28a745';
+                } else {
+                    debateStatus.textContent = 'Error restarting system';
+                    debateStatus.style.color = '#dc3545';
+                }
+            } catch (error) {
+                console.error('Error restarting:', error);
+                debateStatus.textContent = `Error: ${error.message}`;
+                debateStatus.style.color = '#dc3545';
+            } finally {
+                if (btn) {
+                    btn.disabled = false;
+                    if (btn === restartBtn) {
+                        btn.textContent = '🔄 Restart';
+                    } else {
+                        btn.textContent = '🔄 Restart Debate';
+                    }
+                }
+            }
+        }
+
+        // Check model status on page load and periodically
+        function checkModelStatus() {
+            fetch('/api/model-status')
+                .then(response => response.json())
+                .then(data => {
+                    // Update progress bar
+                    const progress = data.progress || 0;
+                    progressBar.style.width = progress + '%';
+                    progressText.textContent = progress + '%';
+
+                    if (data.downloading) {
+                        modelStatus.style.display = 'block';
+                        modelStatus.style.background = '#fff3cd';
+                        modelStatus.style.color = '#856404';
+                        modelStatusText.textContent = data.message || 'Downloading models into containers...';
+                        
+                        // Show individual model statuses
+                        if (data.models) {
+                            let detailsHTML = '';
+                            for (const [model, info] of Object.entries(data.models)) {
+                                if (typeof info === 'object' && info !== null) {
+                                    const isReady = info.available;
+                                    const icon = isReady ? '✅' : '⏳';
+                                    const statusText = isReady ? 'Ready' : 'Downloading...';
+                                    const bgColor = isReady ? '#d4edda' : '#fff3cd';
+                                    const textColor = isReady ? '#155724' : '#856404';
+                                    detailsHTML += `
+                                        <div style="padding: 8px 12px; background: ${bgColor}; border-radius: 6px; border-left: 3px solid ${isReady ? '#28a745' : '#ffc107'};">
+                                            <div style="font-weight: bold; font-size: 0.9em; color: ${textColor};">
+                                                ${icon} ${model}
+                                            </div>
+                                            <div style="font-size: 0.8em; color: ${textColor}; margin-top: 2px; opacity: 0.9;">
+                                                ${statusText}
+                                            </div>
+                                        </div>
+                                    `;
+                                }
+                            }
+                            modelDetails.innerHTML = detailsHTML;
+                        }
+                        
+                        startDebateBtn.disabled = true;
+                        startDebateBtn.style.opacity = '0.6';
+                        startDebateBtn.style.cursor = 'not-allowed';
+                        startDebateBtn.title = `Please wait for models to download (${progress}% complete)`;
+                    } else if (data.ready) {
+                        // Primary model ready - can start debates
+                        startDebateBtn.disabled = false;
+                        startDebateBtn.style.opacity = '1';
+                        startDebateBtn.style.cursor = 'pointer';
+                        startDebateBtn.title = '';
+                        debateStatus.textContent = 'Primary model ready! You can start a debate.';
+                        debateStatus.style.color = '#28a745';
+                        
+                        // If other models are still downloading, show status
+                        if (data.downloading) {
+                            modelStatus.style.display = 'block';
+                            modelStatus.style.background = '#d4edda';
+                            modelStatus.style.color = '#155724';
+                            modelStatusText.textContent = data.message || 'Primary model ready!';
+                            progressBar.style.width = progress + '%';
+                            progressText.textContent = progress + '%';
+                            
+                            // Show individual model statuses
+                            if (data.models) {
+                                let detailsHTML = '';
+                                for (const [model, info] of Object.entries(data.models)) {
+                                    if (typeof info === 'object' && info !== null) {
+                                        const isReady = info.available;
+                                        const icon = isReady ? '✅' : '⏳';
+                                        const statusText = isReady ? 'Ready' : 'Downloading...';
+                                        const bgColor = isReady ? '#d4edda' : '#fff3cd';
+                                        const textColor = isReady ? '#155724' : '#856404';
+                                        detailsHTML += `
+                                            <div style="padding: 8px 12px; background: ${bgColor}; border-radius: 6px; border-left: 3px solid ${isReady ? '#28a745' : '#ffc107'};">
+                                                <div style="font-weight: bold; font-size: 0.9em; color: ${textColor};">
+                                                    ${icon} ${model}
+                                                </div>
+                                                <div style="font-size: 0.8em; color: ${textColor}; margin-top: 2px; opacity: 0.9;">
+                                                    ${statusText}
+                                                </div>
+                                            </div>
+                                        `;
+                                    }
+                                }
+                                if (modelDetailsGrid) {
+                                    modelDetailsGrid.innerHTML = detailsHTML;
+                                } else {
+                                    modelDetails.innerHTML = detailsHTML;
+                                }
+                            }
+                        } else {
+                            // All models ready
+                            modelStatus.style.display = 'none';
+                            progressBar.style.width = '100%';
+                            progressText.textContent = '100%';
+                            debateStatus.textContent = 'All models ready! You can start a debate.';
+                        }
+                    } else {
+                        modelStatus.style.display = 'block';
+                        modelStatus.style.background = '#f8d7da';
+                        modelStatus.style.color = '#721c24';
+                        modelStatusText.textContent = data.message || 'Error checking models';
+                        startDebateBtn.disabled = true;
+                        startDebateBtn.style.opacity = '0.6';
+                        startDebateBtn.style.cursor = 'not-allowed';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error checking model status:', error);
+                    modelStatus.style.display = 'block';
+                    modelStatus.style.background = '#fff3cd';
+                    modelStatus.style.color = '#856404';
+                    modelStatusText.textContent = 'Connecting to Ollama...';
+                    progressBar.style.width = '0%';
+                    progressText.textContent = '0%';
+                    startDebateBtn.disabled = true;
+                    startDebateBtn.style.opacity = '0.6';
+                    startDebateBtn.style.cursor = 'not-allowed';
+                });
+        }
+
+        // Check immediately and then every 5 seconds
+        checkModelStatus();
+        setInterval(checkModelStatus, 5000);
+
+        ws.onopen = () => {
+            status.textContent = 'Connected';
+            status.className = 'status connected';
+        };
+
+        ws.onclose = () => {
+            status.textContent = 'Disconnected';
+            status.className = 'status disconnected';
+        };
+
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('Received WebSocket message:', data);
+                
+                // Handle initial state
+                if (data.topic !== undefined && data.messages !== undefined && !data.type) {
+                    console.log('Received initial state');
+                    debateState = data;
+                    renderDebate();
+                    return;
+                }
+
+                // Handle individual messages
+                console.log('Handling message type:', data.type);
+                handleMessage(data);
+            } catch (error) {
+                console.error('Error parsing message:', error, event.data);
+            }
+        };
+
+        function handleMessage(msg) {
+            console.log('handleMessage called with:', msg);
+            if (!debateState) {
+                debateState = { messages: [], topic: '', starter: '' };
+            }
+
+            if (msg.type === 'topic') {
+                console.log('Handling topic message');
+                debateState.topic = msg.topic;
+                debateState.starter = msg.starter;
+                debateState.messages = [];
+                topicText.textContent = msg.topic;
+                topicSection.style.display = 'block';
+                topicInputSection.style.display = 'none';
+                const starterName = msg.starter === 'persona1' 
+                    ? 'Hindu Republican Capitalist' 
+                    : 'Atheist Democratic Socialist';
+                starterInfo.textContent = `Starting with: ${starterName}`;
+                debateArea.innerHTML = '';
+                thinkingTimers = {}; // Reset timers
+            } else if (msg.type === 'restart') {
+                // Handle restart message
+                debateState = { messages: [], topic: '', starter: '' };
+                debateArea.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 40px;"><p>Waiting for debate to start...</p></div>';
+                topicSection.style.display = 'none';
+                topicInputSection.style.display = 'block';
+                topicInput.value = '';
+                topicInput.disabled = false; // Ensure input is enabled
+                topicInput.focus(); // Focus on input after restart
+                thinkingTimers = {}; // Reset timers
+                debateStatus.textContent = 'System restarted. Ready for new debate.';
+                debateStatus.style.color = '#28a745';
+            } else if (msg.type === 'thinking') {
+                console.log('Handling thinking message');
+                showThinkingStatus(msg);
+            } else if (msg.type === 'argument') {
+                console.log('Handling argument message');
+                // Remove thinking status when response arrives
+                removeThinkingStatus(msg.persona, msg.round);
+                debateState.messages.push(msg);
+                addMessage(msg);
+                // Update model display when we see a message with model info
+                if (msg.model) {
+                    updateModelDisplay();
+                }
+            } else if (msg.type === 'debate_end') {
+                    console.log('Handling debate_end message');
+                    // Remove judge thinking status when decision arrives
+                    removeThinkingStatus('judge', 0);
+                    showJudgeDecision(msg);
+                    // Update model display for judge
+                    if (msg.model) {
+                        updateModelDisplay();
+                    }
+            } else {
+                console.log('Unknown message type:', msg.type);
+            }
+        }
+
+        function renderDebate() {
+            if (!debateState) return;
+
+            if (debateState.topic) {
+                topicText.textContent = debateState.topic;
+                topicSection.style.display = 'block';
+                topicInputSection.style.display = 'none';
+                const starterName = debateState.starter === 'persona1' 
+                    ? 'Hindu Republican Capitalist' 
+                    : 'Atheist Democratic Socialist';
+                starterInfo.textContent = `Starting with: ${starterName}`;
+            }
+
+            debateArea.innerHTML = '';
+            debateState.messages.forEach(msg => {
+                if (msg.type === 'argument') {
+                    addMessage(msg);
+                }
+            });
+
+            if (debateState.winner) {
+                showJudgeDecision({
+                    winner: debateState.winner,
+                    content: debateState.judge_reason
+                });
+            }
+        }
+
+        function showThinkingStatus(msg) {
+            const key = msg.persona === 'judge' ? 'judge' : `${msg.persona}-${msg.round}`;
+            
+            // Remove existing thinking status if any
+            if (msg.persona === 'judge') {
+                removeThinkingStatus('judge', 0);
+            } else {
+                removeThinkingStatus(msg.persona, msg.round);
+            }
+            
+            const thinkingDiv = document.createElement('div');
+            thinkingDiv.className = `message thinking`;
+            thinkingDiv.id = `thinking-${key}`;
+            
+            let personaName, roundBadge;
+            if (msg.persona === 'judge') {
+                personaName = 'Judge';
+                roundBadge = '';
+            } else {
+                personaName = msg.persona === 'persona1' 
+                    ? 'Hindu Republican Capitalist' 
+                    : 'Atheist Democratic Socialist';
+                roundBadge = `<span class="round-badge">Round ${msg.round}</span>`;
+            }
+            
+            const startTime = new Date(msg.timestamp || Date.now());
+            const thinkingText = msg.persona === 'judge' 
+                ? 'Looking at both arguments...' 
+                : 'Thinking...';
+            
+            thinkingDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="persona-name">${personaName}</span>
+                    ${roundBadge}
+                </div>
+                <div class="message-content">
+                    <span class="thinking-dots">${thinkingText}</span>
+                    <span class="thinking-timer" id="timer-${key}">0s</span>
+                </div>
+            `;
+            
+            debateArea.appendChild(thinkingDiv);
+            debateArea.scrollTop = debateArea.scrollHeight;
+            
+            // Start timer
+            const timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const timerEl = document.getElementById(`timer-${key}`);
+                if (timerEl) {
+                    timerEl.textContent = `${elapsed}s`;
+                } else {
+                    clearInterval(timerInterval);
+                }
+            }, 1000);
+            
+            thinkingTimers[key] = timerInterval;
+        }
+        
+        function removeThinkingStatus(persona, round) {
+            const key = persona === 'judge' ? 'judge' : `${persona}-${round}`;
+            const thinkingEl = document.getElementById(`thinking-${key}`);
+            if (thinkingEl) {
+                thinkingEl.remove();
+            }
+            if (thinkingTimers[key]) {
+                clearInterval(thinkingTimers[key]);
+                delete thinkingTimers[key];
+            }
+        }
+
+        function addMessage(msg) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${msg.persona}`;
+
+            const personaName = msg.persona === 'persona1' 
+                ? 'Hindu Republican Capitalist' 
+                : msg.persona === 'persona2' 
+                ? 'Atheist Democratic Socialist' 
+                : 'Judge';
+
+            const modelInfo = msg.model ? ` (${msg.model})` : '';
+
+            messageDiv.innerHTML = `
+                <div class="message-header">
+                    <span class="persona-name">${personaName}<span style="font-size: 0.75em; color: #6c757d; font-weight: normal;">${modelInfo}</span></span>
+                    <span class="round-badge">Round ${msg.round}</span>
+                </div>
+                <div class="message-content">${escapeHtml(msg.content)}</div>
+            `;
+
+            debateArea.appendChild(messageDiv);
+            debateArea.scrollTop = debateArea.scrollHeight;
+            
+            // Update model display when we see a message with model info
+            if (msg.model) {
+                updateModelDisplay();
+            }
+        }
+
+        function showJudgeDecision(msg) {
+            const decisionDiv = document.createElement('div');
+            decisionDiv.className = 'judge-decision';
+            
+            let winnerName = '';
+            if (msg.winner === 'persona1') {
+                winnerName = 'Hindu Republican Capitalist';
+            } else {
+                winnerName = 'Atheist Democratic Socialist';
+            }
+            
+            const judgeModel = msg.model ? ` (${msg.model})` : '';
+
+            decisionDiv.innerHTML = `
+                <h3>🏆 Judge's Decision${judgeModel}</h3>
+                <div class="winner">Winner: ${winnerName}</div>
+                <div class="judge-reason">${escapeHtml(msg.content)}</div>
+            `;
+
+            debateArea.appendChild(decisionDiv);
+            debateArea.scrollTop = debateArea.scrollHeight;
+            
+            // Update model display for judge
+            if (msg.model) {
+                updateModelDisplay();
+            }
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
+
