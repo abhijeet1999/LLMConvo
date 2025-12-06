@@ -31,15 +31,23 @@ type Orchestrator struct {
 	mu               sync.Mutex
 }
 
+func getKafkaBrokers() []string {
+	brokers := os.Getenv("KAFKA_BROKERS")
+	if brokers == "" {
+		brokers = "localhost:19092" // Default for local development
+	}
+	return []string{brokers}
+}
+
 func NewOrchestrator() (*Orchestrator, error) {
-	producer, err := kafka.NewProducer([]string{"localhost:19092"})
+	producer, err := kafka.NewProducer(getKafkaBrokers())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create producer: %w", err)
 	}
 
 	o := &Orchestrator{
 		producer:     producer,
-		maxRounds:    10,
+		maxRounds:    5,
 		currentRound: 0,
 	}
 
@@ -50,13 +58,21 @@ func NewOrchestrator() (*Orchestrator, error) {
 	return o, nil
 }
 
-func (o *Orchestrator) StartDebate(topic string) error {
+func (o *Orchestrator) StartDebate(topic string, maxRounds int) error {
 	o.mu.Lock()
 	// Don't start if there's already an active debate
 	if o.state != nil {
 		log.Printf("Debate already in progress, ignoring topic request: %s", topic)
 		o.mu.Unlock()
 		return nil
+	}
+
+	// Validate maxRounds
+	if maxRounds <= 0 {
+		maxRounds = 5 // Default to 5
+	}
+	if maxRounds != 5 && maxRounds != 10 {
+		maxRounds = 5 // Only allow 5 or 10, default to 5
 	}
 
 	// Randomly select starter
@@ -69,7 +85,7 @@ func (o *Orchestrator) StartDebate(topic string) error {
 	o.state = &models.DebateState{
 		Topic:        topic,
 		CurrentRound: 0,
-		MaxRounds:    10,
+		MaxRounds:    maxRounds,
 		Starter:      starter,
 		Messages:     []models.Message{},
 	}
@@ -77,12 +93,14 @@ func (o *Orchestrator) StartDebate(topic string) error {
 
 	log.Printf("Starting debate on topic: %s", topic)
 	log.Printf("Starter: %s", starter)
+	log.Printf("Max Rounds: %d", maxRounds)
 
 	// Send topic message
 	topicMsg := models.Message{
 		Type:      models.MessageTypeTopic,
 		Topic:     topic,
 		Starter:   starter,
+		MaxRounds: maxRounds,
 		Timestamp: time.Now(),
 	}
 
@@ -113,7 +131,7 @@ func (o *Orchestrator) StartDebate(topic string) error {
 func (o *Orchestrator) consumeResponses() {
 	// Consumer for persona1 responses
 	go func() {
-		consumer, err := kafka.NewConsumer([]string{"localhost:19092"}, func(data []byte) error {
+		consumer, err := kafka.NewConsumer(getKafkaBrokers(), func(data []byte) error {
 			var msg models.Message
 			if err := kafka.UnmarshalMessage(data, &msg); err != nil {
 				return err
@@ -133,7 +151,7 @@ func (o *Orchestrator) consumeResponses() {
 
 	// Consumer for persona2 responses
 	go func() {
-		consumer, err := kafka.NewConsumer([]string{"localhost:19092"}, func(data []byte) error {
+		consumer, err := kafka.NewConsumer(getKafkaBrokers(), func(data []byte) error {
 			var msg models.Message
 			if err := kafka.UnmarshalMessage(data, &msg); err != nil {
 				return err
@@ -153,7 +171,7 @@ func (o *Orchestrator) consumeResponses() {
 
 	// Consumer for judge response
 	go func() {
-		consumer, err := kafka.NewConsumer([]string{"localhost:19092"}, func(data []byte) error {
+		consumer, err := kafka.NewConsumer(getKafkaBrokers(), func(data []byte) error {
 			var msg models.Message
 			if err := kafka.UnmarshalMessage(data, &msg); err != nil {
 				return err
@@ -243,7 +261,7 @@ func (o *Orchestrator) handleResponse(persona string, msg models.Message) error 
 
 	log.Printf("✅ Round %d complete from %s. Total messages: %d", currentRound, persona, len(state.Messages))
 
-	if currentRound >= o.maxRounds {
+	if currentRound >= state.MaxRounds {
 		log.Println("Debate complete! Requesting judge evaluation...")
 		return o.requestJudgeEvaluation()
 	}
@@ -426,7 +444,7 @@ func main() {
 
 	// Listen for topic messages from web server
 	go func() {
-		consumer, err := kafka.NewConsumer([]string{"localhost:19092"}, func(data []byte) error {
+		consumer, err := kafka.NewConsumer(getKafkaBrokers(), func(data []byte) error {
 			var msg models.Message
 			if err := kafka.UnmarshalMessage(data, &msg); err != nil {
 				return err
@@ -474,7 +492,11 @@ func main() {
 				}
 
 				// Start the new debate
-				return orchestrator.StartDebate(msg.Topic)
+				maxRounds := msg.MaxRounds
+				if maxRounds == 0 {
+					maxRounds = 5 // Default to 5
+				}
+				return orchestrator.StartDebate(msg.Topic, maxRounds)
 			}
 
 			return nil

@@ -262,10 +262,17 @@
 
         <div class="topic-input-section" id="topicInputSection">
             <h2>Start a New Debate</h2>
-            <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <div style="display: flex; gap: 10px; margin-top: 15px; align-items: center;">
                 <input type="text" id="topicInput" placeholder="Enter debate topic (e.g., Should AI be regulated?)" 
                        style="flex: 1; padding: 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 1em;"
                        autocomplete="off" autofocus>
+                <label style="display: flex; align-items: center; gap: 8px; white-space: nowrap; font-size: 0.95em; color: #495057;">
+                    Rounds:
+                    <select id="roundsSelect" style="padding: 8px 12px; border: 2px solid #e9ecef; border-radius: 8px; font-size: 1em; cursor: pointer;">
+                        <option value="5" selected>5</option>
+                        <option value="10">10</option>
+                    </select>
+                </label>
                 <button id="startDebateBtn" onclick="startDebate()" 
                         style="padding: 12px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                                color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: bold; 
@@ -381,9 +388,11 @@
                 return;
             }
 
+            const maxRounds = parseInt(document.getElementById('roundsSelect').value) || 5;
+
             startDebateBtn.disabled = true;
             topicInput.disabled = true; // Disable input while starting
-            debateStatus.textContent = 'Starting debate...';
+            debateStatus.textContent = `Starting debate with ${maxRounds} rounds...`;
             debateStatus.style.color = '#6c757d';
 
             fetch('/api/start-debate', {
@@ -391,7 +400,7 @@
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({ topic: topic })
+                body: JSON.stringify({ topic: topic, max_rounds: maxRounds })
             })
             .then(response => response.json())
             .then(data => {

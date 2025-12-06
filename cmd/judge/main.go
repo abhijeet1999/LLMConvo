@@ -43,10 +43,18 @@ type JudgeRequest struct {
 	Conversation []models.Message `json:"conversation"`
 }
 
+func getKafkaBrokers() []string {
+	brokers := os.Getenv("KAFKA_BROKERS")
+	if brokers == "" {
+		brokers = "localhost:19092" // Default for local development
+	}
+	return []string{brokers}
+}
+
 func NewJudgeService(ollamaURL, model string) (*JudgeService, error) {
 	ollamaClient := ollama.NewClient(ollamaURL, model)
 
-	producer, err := kafka.NewProducer([]string{"localhost:19092"})
+	producer, err := kafka.NewProducer(getKafkaBrokers())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create producer: %w", err)
 	}
@@ -59,7 +67,7 @@ func NewJudgeService(ollamaURL, model string) (*JudgeService, error) {
 		ollamaURL:    ollamaURL,
 	}
 
-	consumer, err := kafka.NewConsumer([]string{"localhost:19092"}, service.handleMessage)
+	consumer, err := kafka.NewConsumer(getKafkaBrokers(), service.handleMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}

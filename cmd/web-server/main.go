@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -15,6 +16,14 @@ import (
 
 	"github.com/gorilla/websocket"
 )
+
+func getOllamaURL() string {
+	url := os.Getenv("OLLAMA_URL")
+	if url == "" {
+		url = "http://localhost:11434" // Default for local development
+	}
+	return url
+}
 
 const (
 	TopicConversation = "conversation-log"
@@ -36,6 +45,14 @@ type WebServer struct {
 	modelsMu    sync.RWMutex
 }
 
+func getKafkaBrokers() []string {
+	brokers := os.Getenv("KAFKA_BROKERS")
+	if brokers == "" {
+		brokers = "localhost:19092" // Default for local development
+	}
+	return []string{brokers}
+}
+
 func NewWebServer() (*WebServer, error) {
 	ws := &WebServer{
 		clients:     make(map[*websocket.Conn]bool),
@@ -43,7 +60,7 @@ func NewWebServer() (*WebServer, error) {
 		models:      make(map[string]string),
 	}
 
-	consumer, err := kafka.NewConsumer([]string{"localhost:19092"}, ws.handleMessage)
+	consumer, err := kafka.NewConsumer(getKafkaBrokers(), ws.handleMessage)
 	if err != nil {
 		return nil, err
 	}
@@ -186,14 +203,19 @@ func (ws *WebServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ws *WebServer) checkModelsReady() (bool, string) {
-	ollamaURL := "http://localhost:11434"
+	ollamaURL := getOllamaURL()
 	// Only need ONE model to be ready - all services will use the same model
 	primaryModel := "gemma:2b" // Smallest, downloads first
 
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
 	// Try to get model list from Ollama
-	resp, err := http.Get(fmt.Sprintf("%s/api/tags", ollamaURL))
+	resp, err := client.Get(fmt.Sprintf("%s/api/tags", ollamaURL))
 	if err != nil {
-		return false, "Ollama not responding"
+		return false, fmt.Sprintf("Ollama not responding at %s: %v", ollamaURL, err)
 	}
 	defer resp.Body.Close()
 
@@ -237,7 +259,8 @@ func (ws *WebServer) handleStartDebate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Topic string `json:"topic"`
+		Topic     string `json:"topic"`
+		MaxRounds int    `json:"max_rounds"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -263,16 +286,26 @@ func (ws *WebServer) handleStartDebate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send topic to orchestrator via Kafka
-	producer, err := kafka.NewProducer([]string{"localhost:19092"})
+	producer, err := kafka.NewProducer(getKafkaBrokers())
 	if err != nil {
 		http.Error(w, "Failed to connect to message broker", http.StatusInternalServerError)
 		return
 	}
 	defer producer.Close()
 
+	// Validate and set maxRounds (default to 5)
+	maxRounds := req.MaxRounds
+	if maxRounds == 0 {
+		maxRounds = 5 // Default
+	}
+	if maxRounds != 5 && maxRounds != 10 {
+		maxRounds = 5 // Only allow 5 or 10
+	}
+
 	topicMsg := models.Message{
 		Type:      models.MessageTypeTopic,
 		Topic:     req.Topic,
+		MaxRounds: maxRounds,
 		Timestamp: time.Now(),
 	}
 
@@ -292,7 +325,7 @@ func (ws *WebServer) handleRestart(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send restart signal to orchestrator via Kafka
-	producer, err := kafka.NewProducer([]string{"localhost:19092"})
+	producer, err := kafka.NewProducer(getKafkaBrokers())
 	if err != nil {
 		http.Error(w, "Failed to connect to message broker", http.StatusInternalServerError)
 		return
@@ -323,7 +356,7 @@ func (ws *WebServer) handleRestart(w http.ResponseWriter, r *http.Request) {
 		"conversation-log",
 	}
 
-	if err := kafka.DeleteTopics([]string{"localhost:19092"}, topics); err != nil {
+	if err := kafka.DeleteTopics(getKafkaBrokers(), topics); err != nil {
 		log.Printf("Warning: Failed to delete some topics: %v", err)
 		// Continue anyway - topics will be recreated on next use
 	}
@@ -346,7 +379,7 @@ func (ws *WebServer) handleModelStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check Ollama for model availability - prioritize gemma:2b (downloads first)
-	ollamaURL := "http://localhost:11434"
+	ollamaURL := getOllamaURL()
 	primaryModel := "gemma:2b"                                         // Downloads first, all services use this
 	requiredModels := []string{"gemma:2b", "phi3:mini", "llama3.2:3b"} // Others download in background
 
@@ -356,8 +389,13 @@ func (ws *WebServer) handleModelStatus(w http.ResponseWriter, r *http.Request) {
 		"ready":       true,
 	}
 
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+
 	// Try to get model list from Ollama
-	resp, err := http.Get(fmt.Sprintf("%s/api/tags", ollamaURL))
+	resp, err := client.Get(fmt.Sprintf("%s/api/tags", ollamaURL))
 	if err != nil {
 		// Ollama might not be ready yet
 		status["downloading"] = true
@@ -498,8 +536,11 @@ func (ws *WebServer) handleModels(w http.ResponseWriter, r *http.Request) {
 
 	// If models are empty, query Ollama to determine which models services are using
 	if persona1Model == "" || persona2Model == "" || judgeModel == "" {
-		ollamaURL := "http://localhost:11434"
-		resp, err := http.Get(fmt.Sprintf("%s/api/tags", ollamaURL))
+		ollamaURL := getOllamaURL()
+		client := &http.Client{
+			Timeout: 5 * time.Second,
+		}
+		resp, err := client.Get(fmt.Sprintf("%s/api/tags", ollamaURL))
 		if err == nil {
 			defer resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {

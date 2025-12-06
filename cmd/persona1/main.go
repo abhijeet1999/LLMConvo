@@ -42,10 +42,18 @@ type PersonaService struct {
 	ollamaURL            string
 }
 
+func getKafkaBrokers() []string {
+	brokers := os.Getenv("KAFKA_BROKERS")
+	if brokers == "" {
+		brokers = "localhost:19092" // Default for local development
+	}
+	return []string{brokers}
+}
+
 func NewPersonaService(ollamaURL, model, personaName, systemPrompt string) (*PersonaService, error) {
 	ollamaClient := ollama.NewClient(ollamaURL, model)
 
-	producer, err := kafka.NewProducer([]string{"localhost:19092"})
+	producer, err := kafka.NewProducer(getKafkaBrokers())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create producer: %w", err)
 	}
@@ -61,14 +69,14 @@ func NewPersonaService(ollamaURL, model, personaName, systemPrompt string) (*Per
 		ollamaURL:       ollamaURL,
 	}
 
-	consumer, err := kafka.NewConsumer([]string{"localhost:19092"}, service.handleMessage)
+	consumer, err := kafka.NewConsumer(getKafkaBrokers(), service.handleMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create consumer: %w", err)
 	}
 	service.consumer = consumer
 
 	// Also consume from conversation-log to see opponent's actual responses
-	conversationConsumer, err := kafka.NewConsumer([]string{"localhost:19092"}, service.handleConversationMessage)
+	conversationConsumer, err := kafka.NewConsumer(getKafkaBrokers(), service.handleConversationMessage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create conversation consumer: %w", err)
 	}
@@ -166,17 +174,17 @@ func (p *PersonaService) generateResponse(msg models.Message, isOpening bool) er
 
 	maxTokens := 50
 	if isOpening {
-		prompt = fmt.Sprintf("Debate Topic: %s\n\nAs a Hindu Republican Capitalist, make your opening argument about this topic (1 line max, use abbrevs like 'govt' not 'government'). Apply your beliefs to this specific topic. Do NOT say 'I conclude' - that's only for Round 10. Just make your opening statement:", msg.Topic)
+		prompt = fmt.Sprintf("Debate Topic: %s\n\nAs a Hindu Republican Capitalist, make your opening argument about this topic (1 line max, use abbrevs like 'govt' not 'government'). Apply your beliefs to this specific topic. Do NOT say 'I conclude' - that's only for Round 5. Just make your opening statement:", msg.Topic)
 	} else {
-		// Check if this is the final round (round 10)
-		isFinalRound := msg.Round >= 10
+		// Check if this is the final round (round 5)
+		isFinalRound := msg.Round >= 5
 
 		// Build conversation context - adaptive context size based on round
 		context := fmt.Sprintf("Topic: %s\n\nRecent conversation:\n\n", msg.Topic)
 
 		// Use minimal context (1 message) for fastest generation
 		contextSize := 1
-		
+
 		// Get last N messages for context
 		startIdx := len(p.conversation) - contextSize
 		if startIdx < 0 {
@@ -195,7 +203,7 @@ func (p *PersonaService) generateResponse(msg models.Message, isOpening bool) er
 		}
 
 		if isFinalRound {
-			context += fmt.Sprintf("This is the FINAL ROUND (Round 10) about the topic '%s'. Provide your conclusion:\n", msg.Topic)
+			context += fmt.Sprintf("This is the FINAL ROUND (Round 5) about the topic '%s'. Provide your conclusion:\n", msg.Topic)
 			context += "- Start with 'I conclude' (ONLY in this final round)\n"
 			context += "- Mention what both sides may agree on regarding this topic\n"
 			context += "- End with a strong closing point from your Hindu Republican Capitalist perspective\n"
@@ -224,10 +232,10 @@ func (p *PersonaService) generateResponse(msg models.Message, isOpening bool) er
 	if err != nil {
 		// Try fallback models on any error (timeout, memory, connection, etc.)
 		log.Printf("[%s] Error with model %s: %v. Trying fallback models...", p.personaName, p.currentModel, err)
-		
+
 		// Fallback models in order of preference (fastest/smallest first)
 		fallbackModels := []string{"gemma:2b", "phi3:mini", "llama3.2:3b"}
-		
+
 		// Remove current model from fallback list if it's already there
 		for i, model := range fallbackModels {
 			if model == p.currentModel {
@@ -235,27 +243,27 @@ func (p *PersonaService) generateResponse(msg models.Message, isOpening bool) er
 				break
 			}
 		}
-		
+
 		// Try each fallback model
 		for _, fallbackModel := range fallbackModels {
 			log.Printf("[%s] Trying fallback model: %s", p.personaName, fallbackModel)
 			fallbackClient := ollama.NewClient(p.ollamaURL, fallbackModel)
-			
+
 			if maxTokens > 50 {
 				response, err = fallbackClient.GenerateWithTokens(prompt, p.systemPrompt, maxTokens)
 			} else {
 				response, err = fallbackClient.Generate(prompt, p.systemPrompt)
 			}
-			
+
 			if err == nil {
 				log.Printf("[%s] ✅ Successfully switched to model: %s", p.personaName, fallbackModel)
 				p.currentModel = fallbackModel // Update current model for future requests
-				break // Success, exit loop
+				break                          // Success, exit loop
 			} else {
 				log.Printf("[%s] ⚠️  Fallback model %s also failed: %v", p.personaName, fallbackModel, err)
 			}
 		}
-		
+
 		// If all models failed, return error
 		if err != nil {
 			log.Printf("[%s] ❌ All models failed. Last error: %v", p.personaName, err)
