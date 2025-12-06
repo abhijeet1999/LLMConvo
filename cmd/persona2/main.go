@@ -24,9 +24,9 @@ const (
 
 // Available models for persona2 (lightweight, fast) - prioritize smallest first
 var AvailableModels = []string{
-	"gemma:2b",    // Smallest, fastest (~1.7 GB) - download first, use for all
-	"llama3.2:3b", // Good balance (~2.0 GB) - more memory efficient than phi3:mini
-	"phi3:mini",   // Very fast, small (~2.2 GB) but needs more memory (3.5 GiB)
+	"gemma:2b",    // Smallest, fastest (~1.7 GB) - USE FIRST for speed
+	"phi3:mini",   // Very fast alternative (~2.2 GB)
+	"llama3.2:3b", // Slower but better quality - use as last resort
 }
 
 type PersonaService struct {
@@ -171,11 +171,14 @@ func (p *PersonaService) generateResponse(msg models.Message, isOpening bool) er
 		// Check if this is the final round (round 10)
 		isFinalRound := msg.Round >= 10
 
-		// Build conversation context - use last 5 messages for better context and variety
+		// Build conversation context - adaptive context size based on round
 		context := fmt.Sprintf("Topic: %s\n\nRecent conversation:\n\n", msg.Topic)
 
-		// Get last 5 messages for context (better variety, prevents repetition)
-		startIdx := len(p.conversation) - 5
+		// Use minimal context (1 message) for fastest generation
+		contextSize := 1
+		
+		// Get last N messages for context
+		startIdx := len(p.conversation) - contextSize
 		if startIdx < 0 {
 			startIdx = 0
 		}
@@ -219,24 +222,44 @@ func (p *PersonaService) generateResponse(msg models.Message, isOpening bool) er
 		response, err = p.ollamaClient.Generate(prompt, p.systemPrompt)
 	}
 	if err != nil {
-		// Check if it's a memory error - if so, try fallback model
-		if strings.Contains(err.Error(), "requires more system memory") || strings.Contains(err.Error(), "memory") {
-			log.Printf("[%s] Memory error with model %s, trying fallback model", p.personaName, p.currentModel)
-			// Try gemma:2b as fallback (smallest model)
-			fallbackClient := ollama.NewClient(p.ollamaURL, "gemma:2b")
+		// Try fallback models on any error (timeout, memory, connection, etc.)
+		log.Printf("[%s] Error with model %s: %v. Trying fallback models...", p.personaName, p.currentModel, err)
+		
+		// Fallback models in order of preference (fastest/smallest first)
+		fallbackModels := []string{"gemma:2b", "phi3:mini", "llama3.2:3b"}
+		
+		// Remove current model from fallback list if it's already there
+		for i, model := range fallbackModels {
+			if model == p.currentModel {
+				fallbackModels = append(fallbackModels[:i], fallbackModels[i+1:]...)
+				break
+			}
+		}
+		
+		// Try each fallback model
+		for _, fallbackModel := range fallbackModels {
+			log.Printf("[%s] Trying fallback model: %s", p.personaName, fallbackModel)
+			fallbackClient := ollama.NewClient(p.ollamaURL, fallbackModel)
+			
 			if maxTokens > 50 {
 				response, err = fallbackClient.GenerateWithTokens(prompt, p.systemPrompt, maxTokens)
 			} else {
 				response, err = fallbackClient.Generate(prompt, p.systemPrompt)
 			}
+			
 			if err == nil {
-				log.Printf("[%s] Successfully used fallback model gemma:2b", p.personaName)
-				p.currentModel = "gemma:2b" // Update current model
+				log.Printf("[%s] ✅ Successfully switched to model: %s", p.personaName, fallbackModel)
+				p.currentModel = fallbackModel // Update current model for future requests
+				break // Success, exit loop
+			} else {
+				log.Printf("[%s] ⚠️  Fallback model %s also failed: %v", p.personaName, fallbackModel, err)
 			}
 		}
+		
+		// If all models failed, return error
 		if err != nil {
-			log.Printf("[%s] Generation failed: %v", p.personaName, err)
-			return fmt.Errorf("failed to generate response: %w", err)
+			log.Printf("[%s] ❌ All models failed. Last error: %v", p.personaName, err)
+			return fmt.Errorf("failed to generate response after trying all models: %w", err)
 		}
 	}
 
@@ -321,12 +344,9 @@ func selectModel() string {
 	}
 
 	if allAvailable {
-		// All models available - use llama3.2:3b for persona2 (phi3:mini needs more memory)
-		// Try phi3:mini first, but fallback to llama3.2:3b if memory issues
-		log.Printf("All models available! Attempting to use phi3:mini for Persona2")
-		// Check if we can actually use phi3:mini (it needs more memory)
-		// For now, use llama3.2:3b which is more memory-efficient
-		return "llama3.2:3b"
+		// All models available - use gemma:2b for persona2 (FASTEST)
+		log.Printf("All models available! Using gemma:2b for Persona2 (fastest)")
+		return "gemma:2b"
 	}
 
 	// Not all models available - use first available from list

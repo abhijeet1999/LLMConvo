@@ -171,11 +171,14 @@ func (p *PersonaService) generateResponse(msg models.Message, isOpening bool) er
 		// Check if this is the final round (round 10)
 		isFinalRound := msg.Round >= 10
 
-		// Build conversation context - use last 5 messages for better context and variety
+		// Build conversation context - adaptive context size based on round
 		context := fmt.Sprintf("Topic: %s\n\nRecent conversation:\n\n", msg.Topic)
 
-		// Get last 5 messages for context (better variety, prevents repetition)
-		startIdx := len(p.conversation) - 5
+		// Use minimal context (1 message) for fastest generation
+		contextSize := 1
+		
+		// Get last N messages for context
+		startIdx := len(p.conversation) - contextSize
 		if startIdx < 0 {
 			startIdx = 0
 		}
@@ -219,24 +222,44 @@ func (p *PersonaService) generateResponse(msg models.Message, isOpening bool) er
 		response, err = p.ollamaClient.Generate(prompt, p.systemPrompt)
 	}
 	if err != nil {
-		// Check if it's a memory error - if so, try fallback model
-		if strings.Contains(err.Error(), "requires more system memory") || strings.Contains(err.Error(), "memory") {
-			log.Printf("[%s] Memory error with model %s, trying fallback model", p.personaName, p.currentModel)
-			// Try gemma:2b as fallback (smallest model)
-			fallbackClient := ollama.NewClient(p.ollamaURL, "gemma:2b")
+		// Try fallback models on any error (timeout, memory, connection, etc.)
+		log.Printf("[%s] Error with model %s: %v. Trying fallback models...", p.personaName, p.currentModel, err)
+		
+		// Fallback models in order of preference (fastest/smallest first)
+		fallbackModels := []string{"gemma:2b", "phi3:mini", "llama3.2:3b"}
+		
+		// Remove current model from fallback list if it's already there
+		for i, model := range fallbackModels {
+			if model == p.currentModel {
+				fallbackModels = append(fallbackModels[:i], fallbackModels[i+1:]...)
+				break
+			}
+		}
+		
+		// Try each fallback model
+		for _, fallbackModel := range fallbackModels {
+			log.Printf("[%s] Trying fallback model: %s", p.personaName, fallbackModel)
+			fallbackClient := ollama.NewClient(p.ollamaURL, fallbackModel)
+			
 			if maxTokens > 50 {
 				response, err = fallbackClient.GenerateWithTokens(prompt, p.systemPrompt, maxTokens)
 			} else {
 				response, err = fallbackClient.Generate(prompt, p.systemPrompt)
 			}
+			
 			if err == nil {
-				log.Printf("[%s] Successfully used fallback model gemma:2b", p.personaName)
-				p.currentModel = "gemma:2b" // Update current model
+				log.Printf("[%s] ✅ Successfully switched to model: %s", p.personaName, fallbackModel)
+				p.currentModel = fallbackModel // Update current model for future requests
+				break // Success, exit loop
+			} else {
+				log.Printf("[%s] ⚠️  Fallback model %s also failed: %v", p.personaName, fallbackModel, err)
 			}
 		}
+		
+		// If all models failed, return error
 		if err != nil {
-			log.Printf("[%s] Generation failed: %v", p.personaName, err)
-			return fmt.Errorf("failed to generate response: %w", err)
+			log.Printf("[%s] ❌ All models failed. Last error: %v", p.personaName, err)
+			return fmt.Errorf("failed to generate response after trying all models: %w", err)
 		}
 	}
 

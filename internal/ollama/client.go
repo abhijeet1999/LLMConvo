@@ -50,7 +50,7 @@ func (c *Client) Generate(prompt, systemPrompt string) (string, error) {
 func (c *Client) GenerateWithTokens(prompt, systemPrompt string, maxTokens int) (string, error) {
 	const maxRetries = 3
 	const initialTimeout = 30 * time.Second
-	const maxTimeout = 2 * time.Minute
+	const maxTimeout = 5 * time.Minute // Increased from 2 minutes to handle longer contexts
 
 	var lastErr error
 	for attempt := 0; attempt < maxRetries; attempt++ {

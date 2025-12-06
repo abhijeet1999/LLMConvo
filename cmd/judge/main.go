@@ -35,6 +35,7 @@ type JudgeService struct {
 	consumer     *kafka.Consumer
 	systemPrompt string
 	model        string // Store the selected model
+	ollamaURL    string // Store Ollama URL for fallback clients
 }
 
 type JudgeRequest struct {
@@ -54,6 +55,8 @@ func NewJudgeService(ollamaURL, model string) (*JudgeService, error) {
 		ollamaClient: ollamaClient,
 		producer:     producer,
 		systemPrompt: personas.JudgeSystemPrompt,
+		model:        model,
+		ollamaURL:    ollamaURL,
 	}
 
 	consumer, err := kafka.NewConsumer([]string{"localhost:19092"}, service.handleMessage)
@@ -127,7 +130,41 @@ func (j *JudgeService) evaluateDebate(msg models.Message, conversation []models.
 	// Judge needs more tokens for evaluation (3-5 sentences)
 	response, err := j.ollamaClient.GenerateWithTokens(prompt, j.systemPrompt, 200)
 	if err != nil {
-		return fmt.Errorf("failed to generate judgment: %w", err)
+		// Try fallback models on any error (timeout, memory, connection, etc.)
+		log.Printf("[judge] Error with model %s: %v. Trying fallback models...", j.model, err)
+		
+		// Fallback models in order of preference (fastest/smallest first)
+		fallbackModels := []string{"gemma:2b", "phi3:mini", "llama3.2:3b", "qwen2.5:3b"}
+		
+		// Remove current model from fallback list if it's already there
+		for i, model := range fallbackModels {
+			if model == j.model {
+				fallbackModels = append(fallbackModels[:i], fallbackModels[i+1:]...)
+				break
+			}
+		}
+		
+		// Try each fallback model
+		for _, fallbackModel := range fallbackModels {
+			log.Printf("[judge] Trying fallback model: %s", fallbackModel)
+			fallbackClient := ollama.NewClient(j.ollamaURL, fallbackModel)
+			response, err = fallbackClient.GenerateWithTokens(prompt, j.systemPrompt, 200)
+			
+			if err == nil {
+				log.Printf("[judge] ✅ Successfully switched to model: %s", fallbackModel)
+				j.model = fallbackModel // Update current model for future requests
+				j.ollamaClient = fallbackClient // Update client
+				break // Success, exit loop
+			} else {
+				log.Printf("[judge] ⚠️  Fallback model %s also failed: %v", fallbackModel, err)
+			}
+		}
+		
+		// If all models failed, return error
+		if err != nil {
+			log.Printf("[judge] ❌ All models failed. Last error: %v", err)
+			return fmt.Errorf("failed to generate judgment after trying all models: %w", err)
+		}
 	}
 
 	// Parse winner from response - find the FIRST occurrence
