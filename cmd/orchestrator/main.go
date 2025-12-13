@@ -206,11 +206,18 @@ func (o *Orchestrator) handleResponse(persona string, msg models.Message) error 
 	}
 
 	// Validate round number - must be next expected round
+	// Allow some flexibility: accept current round or next round (handles delayed responses)
 	expectedRound := o.state.CurrentRound + 1
-	if msg.Round != expectedRound {
+	if msg.Round != expectedRound && msg.Round != o.state.CurrentRound {
 		o.mu.Unlock()
-		log.Printf("Ignoring response from %s: round mismatch (got %d, expected %d)", persona, msg.Round, expectedRound)
+		log.Printf("Ignoring response from %s: round mismatch (got %d, expected %d or %d)", persona, msg.Round, expectedRound, o.state.CurrentRound)
 		return nil // Wrong round, ignore
+	}
+	// If message is for current round, it's a duplicate - ignore
+	if msg.Round == o.state.CurrentRound {
+		o.mu.Unlock()
+		log.Printf("Ignoring duplicate response from %s for round %d", persona, msg.Round)
+		return nil
 	}
 
 	// Validate persona - must be the expected speaker
@@ -319,19 +326,24 @@ func (o *Orchestrator) handleJudgeResponse(msg models.Message) error {
 		o.mu.Unlock()
 		return nil // Debate was reset
 	}
-	o.state.Winner = msg.Persona
+	// Use msg.Winner if available, otherwise fall back to msg.Persona
+	winner := msg.Winner
+	if winner == "" {
+		winner = msg.Persona
+	}
+	o.state.Winner = winner
 	o.state.JudgeReason = msg.Content
 	state := o.state // Capture state for saving
 	o.mu.Unlock()
 
 	endMsg := models.Message{
 		Type:      models.MessageTypeDebateEnd,
-		Winner:    msg.Persona,
+		Winner:    winner,
 		Content:   msg.Content,
 		Timestamp: time.Now(),
 	}
 
-	log.Printf("Debate ended! Winner: %s", msg.Persona)
+	log.Printf("Debate ended! Winner: %s", winner)
 	log.Printf("Judge's reasoning: %s", msg.Content)
 
 	// Save conversation to file

@@ -142,7 +142,8 @@ func (j *JudgeService) evaluateDebate(msg models.Message, conversation []models.
 		log.Printf("[judge] Error with model %s: %v. Trying fallback models...", j.model, err)
 		
 		// Fallback models in order of preference (fastest/smallest first)
-		fallbackModels := []string{"gemma:2b", "phi3:mini", "llama3.2:3b", "qwen2.5:3b"}
+		// Only use models that are auto-downloaded by Ollama
+		fallbackModels := []string{"gemma:2b", "phi3:mini", "llama3.2:3b"}
 		
 		// Remove current model from fallback list if it's already there
 		for i, model := range fallbackModels {
