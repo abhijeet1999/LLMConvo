@@ -153,3 +153,6 @@ maxRounds: 10,  // Change to desired number
 └── go.mod               # Go dependencies
 ```
 
+
+# Note:
+This project was developed as part of the coursework for MSCS621: Cloud Computing at Marist University, instructed by Rasit Onur Topaloglu, Ph.D. The project specifications and requirements were provided as part of the course assignment.
